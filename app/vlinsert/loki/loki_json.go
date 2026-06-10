@@ -16,6 +16,7 @@ import (
 	"github.com/valyala/fastjson"
 
 	"github.com/VictoriaMetrics/VictoriaLogs/app/vlinsert/insertutil"
+	"github.com/VictoriaMetrics/VictoriaLogs/app/vlinsert/streamfieldlimit"
 	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
 )
 
@@ -108,9 +109,22 @@ func parseJSONRequest(data []byte, lmp insertutil.LogMessageProcessor, msgFields
 			labels = o
 		}
 		fieldsTmp.Reset()
+		limitEnabled := streamfieldlimit.Enabled()
+		limitKey := ""
+		if limitEnabled {
+			limitKey = streamfieldlimit.Key()
+		}
+		limitValue := ""
+		limitValueFound := false
 		labels.Visit(func(k []byte, v *fastjson.Value) {
 			vStr := getMarshaledJSONValue(v)
-			fieldsTmp.Add(bytesutil.ToUnsafeString(k), bytesutil.ToUnsafeString(vStr))
+			kStr := bytesutil.ToUnsafeString(k)
+			vStrUnsafe := bytesutil.ToUnsafeString(vStr)
+			if limitEnabled && kStr == limitKey {
+				limitValue = vStrUnsafe
+				limitValueFound = true
+			}
+			fieldsTmp.Add(kStr, vStrUnsafe)
 		})
 
 		// populate messages from `values` array
@@ -175,6 +189,9 @@ func parseJSONRequest(data []byte, lmp insertutil.LogMessageProcessor, msgFields
 				streamFieldsLen = commonFieldsLen
 			}
 
+			if limitValueFound && !streamfieldlimit.Allow(limitValue) {
+				continue
+			}
 			lmp.AddRow(ts, fieldsTmp.Fields, streamFieldsLen)
 		}
 	}

@@ -1,9 +1,11 @@
 package loki
 
 import (
+	"flag"
 	"testing"
 
 	"github.com/VictoriaMetrics/VictoriaLogs/app/vlinsert/insertutil"
+	"github.com/VictoriaMetrics/VictoriaLogs/app/vlinsert/streamfieldlimit"
 )
 
 func TestParseJSONRequest_Failure(t *testing.T) {
@@ -232,4 +234,75 @@ func TestParseJSONRequest_ParseMessage(t *testing.T) {
 		nil, nil, "", []int64{1577836800000000001}, `{"foo":"bar2","bar":"baz","_msg":"I am parsed"}`)
 	f(`{"streams":[{"stream":{"foo":"bar2"},"values":[["1577836800000000001","{\"bar\":\"baz\",\"_msg\":\"I am parsed\"}\r\n\t  "]]}]}`,
 		nil, nil, "", []int64{1577836800000000001}, `{"foo":"bar2","bar":"baz","_msg":"I am parsed"}`)
+}
+
+func TestParseJSONRequest_StreamFieldLimit(t *testing.T) {
+	setStreamFieldLimitFlag(t, "insert.streamFieldLimit.key", "namespace")
+	setStreamFieldLimitFlag(t, "insert.streamFieldLimit.rowsPerWindow", "2")
+	setStreamFieldLimitFlag(t, "insert.streamFieldLimit.window", "24h")
+	streamfieldlimit.Reset()
+
+	tlp := &insertutil.TestLogMessageProcessor{}
+	data := []byte(`{
+		"streams": [
+			{
+				"stream": {"namespace": "default", "source": "event"},
+				"values": [
+					["1577836800000000001", "a"],
+					["1577836800000000002", "b"],
+					["1577836800000000003", "c"]
+				]
+			},
+			{
+				"stream": {"namespace": "kube-system", "source": "event"},
+				"values": [
+					["1577836800000000004", "d"]
+				]
+			},
+			{
+				"stream": {"source": "event"},
+				"values": [
+					["1577836800000000005", "e"],
+					["1577836800000000006", "f"],
+					["1577836800000000007", "g"]
+				]
+			}
+		]
+	}`)
+	if err := parseJSONRequest(data, tlp, nil, nil, "", false, false); err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	if err := tlp.Verify([]int64{
+		1577836800000000001,
+		1577836800000000002,
+		1577836800000000004,
+		1577836800000000005,
+		1577836800000000006,
+		1577836800000000007,
+	}, `{"namespace":"default","source":"event","_msg":"a"}
+{"namespace":"default","source":"event","_msg":"b"}
+{"namespace":"kube-system","source":"event","_msg":"d"}
+{"source":"event","_msg":"e"}
+{"source":"event","_msg":"f"}
+{"source":"event","_msg":"g"}`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setStreamFieldLimitFlag(t *testing.T, name, value string) {
+	t.Helper()
+	f := flag.Lookup(name)
+	if f == nil {
+		t.Fatalf("missing flag %q", name)
+	}
+	oldValue := f.Value.String()
+	if err := flag.Set(name, value); err != nil {
+		t.Fatalf("cannot set flag %q=%q: %s", name, value, err)
+	}
+	t.Cleanup(func() {
+		if err := flag.Set(name, oldValue); err != nil {
+			t.Fatalf("cannot restore flag %q=%q: %s", name, oldValue, err)
+		}
+		streamfieldlimit.Reset()
+	})
 }
