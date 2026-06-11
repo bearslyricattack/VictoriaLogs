@@ -33,7 +33,7 @@ func TestAllowNLimit(t *testing.T) {
 	}
 }
 
-func TestAllowNDoesNotIsolateByTenant(t *testing.T) {
+func TestAllowNAccumulatesPerValue(t *testing.T) {
 	resetConfigForTest()
 	defer resetConfigForTest()
 	configureForTest("namespace", 1, time.Hour)
