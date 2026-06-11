@@ -47,17 +47,20 @@ func Key() string {
 	return *key
 }
 
-// Allow reports whether a log row with the given stream field value is allowed
-// according to the current stream field value limit configuration.
-func Allow(value string) bool {
+// AllowN returns the number of log rows with the given stream field value that
+// are allowed according to the current stream field value limit configuration.
+func AllowN(value string, n int) int {
+	if n <= 0 {
+		return 0
+	}
 	if !Enabled() {
-		return true
+		return n
 	}
 	lk := limitKey{
 		keyHash:   xxhash.Sum64String(*key),
 		valueHash: xxhash.Sum64String(value),
 	}
-	return globalLimiter.allow(lk, *rowsPerWindow, (*window).Nanoseconds())
+	return globalLimiter.allowN(lk, n, *rowsPerWindow, (*window).Nanoseconds())
 }
 
 // Reset clears the limiter state.
@@ -65,7 +68,7 @@ func Reset() {
 	globalLimiter.reset()
 }
 
-func (l *limiter) allow(lk limitKey, rowsLimit int, windowNsecs int64) bool {
+func (l *limiter) allowN(lk limitKey, n, rowsLimit int, windowNsecs int64) int {
 	now := time.Now().UnixNano()
 	shard := &l.shards[lk.valueHash%uint64(len(l.shards))]
 	shard.mu.Lock()
@@ -87,12 +90,18 @@ func (l *limiter) allow(lk limitKey, rowsLimit int, windowNsecs int64) bool {
 		e.windowStart = now
 		e.rows = 0
 	}
-	if e.rows >= rowsLimit {
-		return false
+	remaining := rowsLimit - e.rows
+	if remaining <= 0 {
+		e.lastSeen = now
+		return 0
 	}
-	e.rows++
+	allowed := n
+	if allowed > remaining {
+		allowed = remaining
+	}
+	e.rows += allowed
 	e.lastSeen = now
-	return true
+	return allowed
 }
 
 func (s *limiterShard) cleanupLocked(now, windowNsecs int64) {

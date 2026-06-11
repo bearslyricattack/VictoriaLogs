@@ -5,58 +5,58 @@ import (
 	"time"
 )
 
-func TestAllowDisabled(t *testing.T) {
+func TestAllowNDisabled(t *testing.T) {
 	resetConfigForTest()
 	defer resetConfigForTest()
 
-	if !Allow("default") {
-		t.Fatalf("unexpected reject when limiter is disabled")
+	if n := AllowN("default", 10); n != 10 {
+		t.Fatalf("unexpected allowed rows when limiter is disabled; got %d; want 10", n)
 	}
 }
 
-func TestAllowLimit(t *testing.T) {
+func TestAllowNLimit(t *testing.T) {
 	resetConfigForTest()
 	defer resetConfigForTest()
 	configureForTest("namespace", 2, time.Hour)
 
-	if !Allow("default") {
-		t.Fatalf("unexpected reject for the first row")
+	if n := AllowN("default", 1); n != 1 {
+		t.Fatalf("unexpected allowed rows for the first batch; got %d; want 1", n)
 	}
-	if !Allow("default") {
-		t.Fatalf("unexpected reject for the second row")
+	if n := AllowN("default", 10); n != 1 {
+		t.Fatalf("unexpected allowed rows for the second batch; got %d; want 1", n)
 	}
-	if Allow("default") {
-		t.Fatalf("unexpected allow after limit is reached")
+	if n := AllowN("default", 1); n != 0 {
+		t.Fatalf("unexpected allowed rows after limit is reached; got %d; want 0", n)
 	}
-	if !Allow("kube-system") {
-		t.Fatalf("unexpected reject for another stream field value")
+	if n := AllowN("kube-system", 1); n != 1 {
+		t.Fatalf("unexpected allowed rows for another stream field value; got %d; want 1", n)
 	}
 }
 
-func TestAllowDoesNotIsolateByTenant(t *testing.T) {
+func TestAllowNDoesNotIsolateByTenant(t *testing.T) {
 	resetConfigForTest()
 	defer resetConfigForTest()
 	configureForTest("namespace", 1, time.Hour)
 
-	if !Allow("default") {
-		t.Fatalf("unexpected reject for the first row")
+	if n := AllowN("default", 1); n != 1 {
+		t.Fatalf("unexpected allowed rows for the first batch; got %d; want 1", n)
 	}
-	if Allow("default") {
-		t.Fatalf("unexpected allow for the same stream field value")
+	if n := AllowN("default", 1); n != 0 {
+		t.Fatalf("unexpected allowed rows for the same stream field value; got %d; want 0", n)
 	}
 }
 
-func TestAllowWindowReset(t *testing.T) {
+func TestAllowNWindowReset(t *testing.T) {
 	resetConfigForTest()
 	defer resetConfigForTest()
 	configureForTest("namespace", 1, time.Nanosecond)
 
-	if !Allow("default") {
-		t.Fatalf("unexpected reject for the first row")
+	if n := AllowN("default", 1); n != 1 {
+		t.Fatalf("unexpected allowed rows for the first batch; got %d; want 1", n)
 	}
 	time.Sleep(time.Millisecond)
-	if !Allow("default") {
-		t.Fatalf("unexpected reject after window reset")
+	if n := AllowN("default", 1); n != 1 {
+		t.Fatalf("unexpected allowed rows after window reset; got %d; want 1", n)
 	}
 }
 

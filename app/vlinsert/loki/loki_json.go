@@ -138,7 +138,11 @@ func parseJSONRequest(data []byte, lmp insertutil.LogMessageProcessor, msgFields
 		}
 
 		commonFieldsLen := len(fieldsTmp.Fields)
-		for _, line := range lines {
+		allowedLines := len(lines)
+		if limitValueFound {
+			allowedLines = streamfieldlimit.AllowN(limitValue, len(lines))
+		}
+		for lineIdx, line := range lines {
 			fieldsTmp.Fields = fieldsTmp.Fields[:commonFieldsLen]
 
 			lineA, err := line.Array()
@@ -189,7 +193,7 @@ func parseJSONRequest(data []byte, lmp insertutil.LogMessageProcessor, msgFields
 				streamFieldsLen = commonFieldsLen
 			}
 
-			if limitValueFound && !streamfieldlimit.Allow(limitValue) {
+			if lineIdx >= allowedLines {
 				continue
 			}
 			lmp.AddRow(ts, fieldsTmp.Fields, streamFieldsLen)
